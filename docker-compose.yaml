@@ -1,0 +1,70 @@
+version: "3.8"
+
+services:
+  flask_api:
+    image: transform-service  # 使用已建置的 transform-service 映像
+    container_name: flask_api
+    restart: always
+    ports:
+      - "5000:5000"  # 對外暴露 Flask API
+    depends_on:
+      - redis
+      - celery_worker
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - sample_data:/app/sample
+      - target_data:/app/target
+    networks:
+      - backend_network
+
+  redis:
+    image: redis:alpine  # 使用輕量版 Redis
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - backend_network
+
+  celery_worker:
+    image: transform-service  # 讓 Celery 使用相同的應用程式映像
+    container_name: celery_worker
+    restart: always
+    command: ["celery", "-A", "tasks", "worker", "--loglevel=info"]
+    depends_on:
+      - redis
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - sample_data:/app/sample
+      - target_data:/app/target
+    networks:
+      - backend_network
+
+  celery_monitor:
+    image: transform-service
+    container_name: celery_monitor
+    restart: always
+    command: ["celery", "-A", "tasks", "flower", "--port=5555"]
+    depends_on:
+      - redis
+      - celery_worker
+    ports:
+      - "5555:5555"  # 監控 Celery 任務
+    networks:
+      - backend_network
+
+networks:
+  backend_network:
+    driver: bridge
+
+volumes:
+  sample_data:
+    driver: local
+  target_data:
+    driver: local
